@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env.oracle
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - tredin_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  market:
+    build: ./BACKEND/market-adapter
+    restart: unless-stopped
+    env_file: .env.oracle
+    expose:
+      - "8787"
+
+  core:
+    build: ./BACKEND/core-api
+    restart: unless-stopped
+    env_file: .env.oracle
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MARKET_ADAPTER_URL: http://market:8787
+      ORDER_EXECUTION_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      market:
+        condition: service_started
+    expose:
+      - "8788"
+
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./USER:/usr/share/nginx/html:ro
+      - ./ADMIN:/usr/share/nginx/html/admin:ro
+      - ./BACKEND/INFRA/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - core
+
+volumes:
+  tredin_pgdata:
